@@ -24,17 +24,81 @@
       height: 100%;
     }
 
-    #info {
+    #tank-health-bar-container {
       position: absolute;
-      top: 10px;
-      left: 10px;
+      bottom: 20px;
+      left: 20px;
       z-index: 10;
-      color: white;
-      background: rgba(0, 0, 0, 0.45);
-      padding: 10px 12px;
+      width: 400px;
+      height: 30px;
+      background: rgba(0, 0, 0, 0.7);
+      border: 2px solid #555;
       border-radius: 6px;
-      line-height: 1.45;
+      overflow: hidden;
       pointer-events: none;
+    }
+
+    #tank-health-bar-fill {
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(180deg, #ff4444, #cc0000);
+      transition: width 0.3s ease;
+    }
+
+    #tank-health-text {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      font-size: 14px;
+      text-shadow: 1px 1px 2px black;
+    }
+
+    #tank-ability-indicators {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      z-index: 10;
+      display: flex;
+      gap: 12px;
+      pointer-events: none;
+    }
+
+    .tank-ability {
+      width: 50px;
+      height: 50px;
+      background: rgba(0, 0, 0, 0.75);
+      border: 2px solid #666;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 12px;
+      font-weight: bold;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .tank-ability .cd-overlay {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      border-radius: 0 0 6px 6px;
+      transition: height 0.1s linear;
+    }
+
+    .tank-ability.active {
+      border-color: #ffaa00;
+      box-shadow: 0 0 10px #ffaa00;
     }
 
     canvas {
@@ -44,13 +108,31 @@
 </head>
 
 <body>
-  <div id="info">
-    Octree three.js demo - basic collisions with static triangle mesh<br />
-    MOUSE to look around and throw balls<br />
-    WASD to move and SPACE to jump
+  <div id="container"></div>
+
+  <div id="tank-ability-indicators">
+    <div class="tank-ability" id="tank-ability-q">
+      <span>Q</span>
+      <div class="cd-overlay"></div>
+    </div>
+    <div class="tank-ability" id="tank-ability-e">
+      <span>E</span>
+      <div class="cd-overlay"></div>
+    </div>
+    <div class="tank-ability" id="tank-ability-r">
+      <span>R</span>
+      <div class="cd-overlay"></div>
+    </div>
+    <div class="tank-ability" id="tank-ability-f">
+      <span>F</span>
+      <div class="cd-overlay"></div>
+    </div>
   </div>
 
-  <div id="container"></div>
+  <div id="tank-health-bar-container">
+    <div id="tank-health-bar-fill"></div>
+    <div id="tank-health-text">Tank HP: 400 / 400</div>
+  </div>
 
   <script type="importmap">
     {
@@ -199,569 +281,595 @@
       });
     }
 
+    // ==================== TANK ENEMY ====================
+
+    function createTankMesh() {
+      const tankGroup = new THREE.Group();
+
+      // --- BODY: Large rocky boulder ---
+      const bodyGeo = new THREE.IcosahedronGeometry(0.65, 2);
+      const bodyMat = new THREE.MeshLambertMaterial({ color: 0x6b5b4f });
+      const body = new THREE.Mesh(bodyGeo, bodyMat);
+      body.scale.set(0.85, 0.65, 0.65);
+      body.position.y = 0;
+      body.castShadow = true;
+      body.receiveShadow = true;
+      tankGroup.add(body);
+
+      // --- TWO LEGS ---
+      const footGeo = new THREE.IcosahedronGeometry(0.18, 1);
+      const footMat = new THREE.MeshLambertMaterial({ color: 0xb8a890 });
+      const footAngles = [0.3, 3.44];
+      for (let i = 0; i < 2; i++) {
+        const angle = footAngles[i];
+        const foot = new THREE.Mesh(footGeo, footMat);
+        foot.position.set(Math.cos(angle) * 0.3, -0.36, Math.sin(angle) * 0.28);
+        foot.scale.set(0.9, 0.85, 0.9);
+        foot.castShadow = true;
+        foot.receiveShadow = true;
+        tankGroup.add(foot);
+      }
+
+      // --- RIGHT & LEFT HANDS (for punching) ---
+      const handGeo = new THREE.IcosahedronGeometry(0.15, 1);
+      const handMat = new THREE.MeshLambertMaterial({ color: 0xb8a890 });
+
+      const rightHand = new THREE.Mesh(handGeo, handMat);
+      rightHand.position.set(0.6, 0.05, 0.1);
+      rightHand.scale.set(0.85, 1.3, 0.85);
+      rightHand.castShadow = true;
+      rightHand.receiveShadow = true;
+      tankGroup.add(rightHand);
+
+      const leftHand = new THREE.Mesh(handGeo, handMat);
+      leftHand.position.set(-0.6, 0.05, 0.1);
+      leftHand.scale.set(0.85, 1.3, 0.85);
+      leftHand.castShadow = true;
+      leftHand.receiveShadow = true;
+      tankGroup.add(leftHand);
+
+      // --- HEAD: Small rock/pebble with contrasting colour ---
+      const headGeo = new THREE.IcosahedronGeometry(0.2, 1);
+      const headMat = new THREE.MeshLambertMaterial({ color: 0xb8a890 });
+      const head = new THREE.Mesh(headGeo, headMat);
+      head.position.set(0, 0.52, 0.12);
+      head.castShadow = true;
+      tankGroup.add(head);
+
+      // --- Tiny eyes on the head ---
+      const eyeGeo = new THREE.SphereGeometry(0.04, 6, 6);
+      const eyeMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+      const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+      leftEye.position.set(-0.07, 0.57, 0.28);
+      tankGroup.add(leftEye);
+      const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
+      rightEye.position.set(0.07, 0.57, 0.28);
+      tankGroup.add(rightEye);
+
+      // --- Windup indicator ring (hidden initially) ---
+      const ringGeo = new THREE.TorusGeometry(0.55, 0.04, 8, 24);
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0 });
+      const windupRing = new THREE.Mesh(ringGeo, ringMat);
+      windupRing.rotation.x = -Math.PI / 2;
+      windupRing.position.y = -0.02;
+      tankGroup.add(windupRing);
+
+      // --- Reflection shield (hidden initially) ---
+      const shieldGeo = new THREE.SphereGeometry(0.85, 16, 16);
+      const shieldMat = new THREE.MeshBasicMaterial({
+        color: 0x4488ff,
+        transparent: true,
+        opacity: 0,
+        wireframe: false,
+      });
+      const reflectShield = new THREE.Mesh(shieldGeo, shieldMat);
+      reflectShield.position.y = 0.25;
+      tankGroup.add(reflectShield);
+
+      // --- Slam visual ring (hidden initially) ---
+      const slamRingGeo = new THREE.TorusGeometry(0.15, 0.15, 4, 32);
+      const slamRingMat = new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0 });
+      const slamRing = new THREE.Mesh(slamRingGeo, slamRingMat);
+      slamRing.rotation.x = -Math.PI / 2;
+      slamRing.position.y = -0.02;
+      tankGroup.add(slamRing);
+
+      tankGroup.position.set(0, 0.42, 0);
+      scene.add(tankGroup);
+
+      return {
+        group: tankGroup,
+        body: body,
+        bodyMat: bodyMat,
+        head: head,
+        headMat: headMat,
+        rightHand: rightHand,
+        leftHand: leftHand,
+        leftEye: leftEye,
+        rightEye: rightEye,
+        windupRing: windupRing,
+        windupRingMat: ringMat,
+        reflectShield: reflectShield,
+        reflectShieldMat: shieldMat,
+        slamRing: slamRing,
+        slamRingMat: slamRingMat,
+      };
+    }
+
+    const tankModel = createTankMesh();
+
+    const tank = {
+      hp: 400,
+      maxHp: 400,
+
+      model: tankModel,
+      collider: new Capsule(
+        new THREE.Vector3(0, 0.43, 0),
+        new THREE.Vector3(0, 0.57, 0),
+        0.35
+      ),
+
+      velocity: new THREE.Vector3(),
+      onFloor: false,
+
+      // --- Main Attack (Q): slow punch, 1s windup, 100 dmg ---
+      mainAttackWindup: 0,
+      mainAttackWindupMax: 0.75,
+      mainAttackRange: 2.5,
+      mainAttackDamage: 150,
+      mainAttackHit: false,
+      punchHand: 0, // 0=right, 1=left — alternates
+      punchProgress: 0,
+
+      // --- Action 1 - Slam (E): AoE 75 dmg + pushback ---
+      slamCooldown: 0,
+      slamCooldownMax: 8,
+      slamRange: 3.5,
+      slamDamage: 112,
+      slamPushbackForce: 18,
+      isSlamming: false,
+      slamEffectTimer: 0,
+      slamEffectMax: 0.6,
+
+      // --- Action 2 - Reflection (R): reflect for 4s ---
+      reflectCooldown: 0,
+      reflectCooldownMax: 15,
+      reflectDuration: 4,
+      reflectTimer: 0,
+      isReflecting: false,
+
+      // --- Ultimate (F): immune, stationary, Q+R only ---
+      ultimateCooldown: 0,
+      ultimateCooldownMax: 30,
+      ultimateDuration: 10,
+      ultimateTimer: 0,
+      isUltimateActive: false,
+
+      // --- Passive: 75% slower, 50% more outgoing damage ---
+      damageMultiplier: 1.5,
+      speedMultiplier: 0.25,
+
+      // --- Player control ---
+      moveSpeed: 12,
+      turnSpeed: 3.5,
+      jumpCooldown: 0,
+    };
+
+    // Sync collider with model position
+    function syncTankCollider() {
+      const pos = tank.model.group.position;
+      tank.collider.start.set(pos.x, pos.y - 0.07, pos.z);
+      tank.collider.end.set(pos.x, pos.y + 0.07, pos.z);
+    }
+    syncTankCollider();
+
+    // Initialize camera behind character at max zoom
+    const initBack = new THREE.Vector3(0, 0, -1);
+    tank.model.group.localToWorld(initBack);
+    initBack.sub(tank.model.group.position).normalize();
+    camera.position.copy(tank.model.group.position)
+      .addScaledVector(initBack, 5.0 * 0.894)
+      .add(new THREE.Vector3(0, 5.0 * 0.447, 0));
+    camera.lookAt(tank.model.group.position.x, tank.model.group.position.y + 0.4, tank.model.group.position.z);
+
+    // ==================== END TANK CREATION ====================
+
     const worldOctree =
       new Octree();
 
-    const playerCollider =
-      new Capsule(
-        new THREE.Vector3(
-          0,
-          0.35,
-          0
-        ),
-
-        new THREE.Vector3(
-          0,
-          1,
-          0
-        ),
-
-        0.35
-      );
-
-    const playerVelocity =
-      new THREE.Vector3();
-
-    const playerDirection =
-      new THREE.Vector3();
-
-    let playerOnFloor = false;
-    let mouseTime = 0;
+    // ==================== TANK PLAYER CONTROLS ====================
 
     const keyStates = {};
 
-    const vector1 =
-      new THREE.Vector3();
+    let mouseOnCanvas = false;
+    let mouseX = 0;
+    let zoomDistance = 5.0;
+    const zoomMin = 0.25;
+    const zoomMax = 5.0;
 
-    const vector2 =
-      new THREE.Vector3();
+    document.addEventListener("keydown", (event) => {
+      keyStates[event.code] = true;
+      // Ability keys
+      if (event.code === "KeyQ") startMainAttack();
+      if (event.code === "KeyE" && tank.slamCooldown <= 0 && !tank.isUltimateActive) activateSlam();
+      if (event.code === "KeyR" && tank.reflectCooldown <= 0 && !tank.isReflecting) activateReflection();
+      if (event.code === "KeyF" && tank.ultimateCooldown <= 0 && !tank.isUltimateActive) activateUltimate();
+    });
 
-    const vector3 =
-      new THREE.Vector3();
+    document.addEventListener("keyup", (event) => {
+      keyStates[event.code] = false;
+    });
 
-    document.addEventListener(
-      "keydown",
-      (event) => {
-        keyStates[event.code] = true;
-      }
-    );
+    container.addEventListener("mousedown", () => {
+      mouseOnCanvas = true;
+      // Melee attack on click
+      startMainAttack();
+    });
 
-    document.addEventListener(
-      "keyup",
-      (event) => {
-        keyStates[event.code] = false;
-      }
-    );
+    container.addEventListener("mouseup", () => {
+      mouseOnCanvas = false;
+    });
 
-    container.addEventListener(
-      "mousedown",
-      () => {
-        document.body.requestPointerLock();
+    container.addEventListener("mousemove", (event) => {
+      mouseX = (event.clientX / window.innerWidth) * 2 - 1;
+    });
 
-        mouseTime =
-          performance.now();
-      }
-    );
+    container.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      zoomDistance -= event.deltaY * 0.005;
+      zoomDistance = Math.max(zoomMin, Math.min(zoomMax, zoomDistance));
+    }, { passive: false });
 
-    document.addEventListener(
-      "mouseup",
-      () => {
-        if (
-          document.pointerLockElement !==
-          null
-        ) {
-          throwBall();
-        }
-      }
-    );
-
-    document.body.addEventListener(
-      "mousemove",
-      (event) => {
-        if (
-          document.pointerLockElement ===
-          document.body
-        ) {
-          camera.rotation.y -=
-            event.movementX /
-            500;
-
-          camera.rotation.x -=
-            event.movementY /
-            500;
-        }
-      }
-    );
-
-    window.addEventListener(
-      "resize",
-      onWindowResize
-    );
+    window.addEventListener("resize", onWindowResize);
 
     function onWindowResize() {
-      camera.aspect =
-        window.innerWidth /
-        window.innerHeight;
-
+      camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
-
-      renderer.setSize(
-        window.innerWidth,
-        window.innerHeight
-      );
+      renderer.setSize(window.innerWidth, window.innerHeight);
     }
 
-    function throwBall() {
-      const sphere =
-        spheres[sphereIdx];
-
-      camera.getWorldDirection(
-        playerDirection
-      );
-
-      sphere.collider.center
-        .copy(
-          playerCollider.end
-        )
-        .addScaledVector(
-          playerDirection,
-          playerCollider.radius *
-            1.5
-        );
-
-      const impulse =
-        15 +
-        30 *
-          (
-            1 -
-            Math.exp(
-              (
-                mouseTime -
-                performance.now()
-              ) *
-                0.001
-            )
-          );
-
-      sphere.velocity
-        .copy(
-          playerDirection
-        )
-        .multiplyScalar(
-          impulse
-        );
-
-      sphere.velocity.addScaledVector(
-        playerVelocity,
-        2
-      );
-
-      sphereIdx =
-        (
-          sphereIdx + 1
-        ) %
-        spheres.length;
-    }
-
-    function playerCollisions() {
-      const result =
-        worldOctree.capsuleIntersect(
-          playerCollider
-        );
-
-      playerOnFloor = false;
-
+    function tankWorldCollisions() {
+      const result = worldOctree.capsuleIntersect(tank.collider);
+      tank.onFloor = false;
       if (result) {
-        playerOnFloor =
-          result.normal.y >=
-          0.15;
-
-        if (!playerOnFloor) {
-          playerVelocity.addScaledVector(
-            result.normal,
-            -
-              result.normal.dot(
-                playerVelocity
-              )
-          );
+        tank.onFloor = result.normal.y >= 0.15;
+        if (!tank.onFloor) {
+          tank.velocity.addScaledVector(result.normal, -result.normal.dot(tank.velocity));
         }
-
-        if (
-          result.depth >=
-          1e-10
-        ) {
-          playerCollider.translate(
-            result.normal.multiplyScalar(
-              result.depth
-            )
-          );
+        if (result.depth >= 1e-10) {
+          tank.collider.translate(result.normal.multiplyScalar(result.depth));
         }
       }
     }
 
-    function updatePlayer(
-      deltaTime
-    ) {
-      let damping =
-        Math.exp(
-          -4 * deltaTime
-        ) - 1;
+    function updatePlayer(deltaTime) {
+      if (tank.hp <= 0) return;
 
-      if (!playerOnFloor) {
-        playerVelocity.y -=
-          GRAVITY *
-          deltaTime;
+      // --- WASD Movement (disabled during ultimate) ---
+      if (!tank.isUltimateActive) {
+        const speed = tank.moveSpeed * tank.speedMultiplier;
 
+        const tankForward = new THREE.Vector3(0, 0, 1);
+        tank.model.group.localToWorld(tankForward);
+        tankForward.sub(tank.model.group.position).normalize();
+
+        const moveDir = new THREE.Vector3();
+        if (keyStates["KeyW"]) moveDir.add(tankForward);
+        if (keyStates["KeyS"]) moveDir.sub(tankForward);
+        if (moveDir.lengthSq() > 0.001) moveDir.normalize();
+
+        tank.velocity.x += (moveDir.x * speed - tank.velocity.x) * (1 - Math.exp(-10 * deltaTime));
+        tank.velocity.z += (moveDir.z * speed - tank.velocity.z) * (1 - Math.exp(-10 * deltaTime));
+
+        // A/D rotate body
+        if (keyStates["KeyA"]) {
+          tank.model.group.rotation.y += tank.turnSpeed * deltaTime;
+        }
+        if (keyStates["KeyD"]) {
+          tank.model.group.rotation.y -= tank.turnSpeed * deltaTime;
+        }
+      } else {
+        tank.velocity.x = 0;
+        tank.velocity.z = 0;
+      }
+
+      // Jump (Space bar, low height, 0.25s cooldown, blocked during ultimate)
+      tank.jumpCooldown = Math.max(0, tank.jumpCooldown - deltaTime);
+      if (keyStates["Space"] && tank.onFloor && !tank.isUltimateActive && tank.jumpCooldown <= 0) {
+        tank.velocity.y = 4;
+        tank.onFloor = false;
+        tank.jumpCooldown = 0.5;
+      }
+
+      // Gravity — only when airborne (proper physics)
+      let damping = Math.exp(-4 * deltaTime) - 1;
+      if (!tank.onFloor) {
+        tank.velocity.y -= GRAVITY * deltaTime;
         damping *= 0.1;
       }
 
-      playerVelocity.addScaledVector(
-        playerVelocity,
-        damping
-      );
+      tank.velocity.x += tank.velocity.x * damping;
+      tank.velocity.z += tank.velocity.z * damping;
+      if (!tank.onFloor) {
+        tank.velocity.y += tank.velocity.y * damping;
+      } else {
+        tank.velocity.y = 0;
+      }
 
-      const deltaPosition =
-        playerVelocity
-          .clone()
-          .multiplyScalar(
-            deltaTime
-          );
+      // Apply velocity
+      const deltaPos = tank.velocity.clone().multiplyScalar(deltaTime);
+      tank.collider.translate(deltaPos);
 
-      playerCollider.translate(
-        deltaPosition
-      );
+      const mid = new THREE.Vector3().addVectors(tank.collider.start, tank.collider.end).multiplyScalar(0.5);
+      tank.model.group.position.copy(mid);
 
-      playerCollisions();
+      // Collision resolution (floor + walls)
+      tankWorldCollisions();
 
-      camera.position.copy(
-        playerCollider.end
-      );
+      // Sync model again after collision
+      const mid2 = new THREE.Vector3().addVectors(tank.collider.start, tank.collider.end).multiplyScalar(0.5);
+      tank.model.group.position.copy(mid2);
+
+      // Abilities cooldowns
+      tank.slamCooldown = Math.max(0, tank.slamCooldown - deltaTime);
+      tank.reflectCooldown = Math.max(0, tank.reflectCooldown - deltaTime);
+      tank.ultimateCooldown = Math.max(0, tank.ultimateCooldown - deltaTime);
+
+      if (tank.isUltimateActive) {
+        tank.ultimateTimer -= deltaTime;
+        if (tank.ultimateTimer <= 0) tank.isUltimateActive = false;
+      }
+      if (tank.isReflecting) {
+        tank.reflectTimer -= deltaTime;
+        if (tank.reflectTimer <= 0) tank.isReflecting = false;
+      }
+      if (tank.isSlamming) {
+        tank.slamEffectTimer -= deltaTime;
+        if (tank.slamEffectTimer <= 0) tank.isSlamming = false;
+      }
+
+      // Main attack windup + punch animation (rotating swing)
+      if (tank.mainAttackWindup > 0) {
+        tank.mainAttackWindup -= deltaTime;
+        tank.punchProgress = 1 - (tank.mainAttackWindup / tank.mainAttackWindupMax);
+
+        // Swing the active hand forward around the body (stays connected)
+        const isRight = tank.punchHand === 0;
+        const activeHand = isRight ? tank.model.rightHand : tank.model.leftHand;
+        const restX = isRight ? 0.6 : -0.6;
+        const restZ = 0.1;
+
+        const swing = tank.punchProgress * 0.7;
+        const angle = isRight ? -swing : swing;
+        const cosA = Math.cos(angle);
+        const sinA = Math.sin(angle);
+        const x = restX * cosA + restZ * sinA;
+        const z = -restX * sinA + restZ * cosA;
+        activeHand.position.set(x, 0.05, z);
+
+        if (tank.mainAttackWindup <= 0 && !tank.mainAttackHit) {
+          tank.mainAttackHit = true;
+          // Reset hand and switch to the other hand for next punch
+          activeHand.position.set(restX, 0.05, restZ);
+          tank.punchHand = 1 - tank.punchHand;
+        }
+      } else {
+        // Hands at rest
+        tank.model.rightHand.position.set(0.6, 0.05, 0.1);
+        tank.model.leftHand.position.set(-0.6, 0.05, 0.1);
+      }
+
+      // Camera — fixed behind (or front when holding S), zoom, collision
+      const tankPos = tank.model.group.position;
+      const camLocal = new THREE.Vector3(0, 0, keyStates["KeyS"] ? 1 : -1);
+      tank.model.group.localToWorld(camLocal);
+      camLocal.sub(tank.model.group.position).normalize();
+
+      if (zoomDistance <= 0.35) {
+        // First person — camera at head level, facing forward, hide head & eyes
+        tank.model.head.visible = false;
+        tank.model.leftEye.visible = false;
+        tank.model.rightEye.visible = false;
+        const headLocal = new THREE.Vector3(0, 0.65, 0.25);
+        tank.model.group.localToWorld(headLocal);
+        camera.position.lerp(headLocal, 10 * deltaTime);
+        const lookLocal = new THREE.Vector3(0, 0.55, 2);
+        tank.model.group.localToWorld(lookLocal);
+        camera.lookAt(lookLocal);
+      } else {
+        tank.model.head.visible = true;
+        tank.model.leftEye.visible = true;
+        tank.model.rightEye.visible = true;
+        const targetCamPos = tankPos.clone()
+          .addScaledVector(camLocal, zoomDistance * 0.894)
+          .add(new THREE.Vector3(0, zoomDistance * 0.447, 0));
+
+        // Collision prevention — don't zoom through geometry
+        const camSphere = new THREE.Sphere(targetCamPos.clone(), 0.3);
+        if (worldOctree.sphereIntersect(camSphere)) {
+          const toTank = tankPos.clone().sub(targetCamPos).normalize();
+          for (let t = 0; t < 8; t++) {
+            targetCamPos.add(toTank);
+            camSphere.center.copy(targetCamPos);
+            if (!worldOctree.sphereIntersect(camSphere)) break;
+          }
+        }
+
+        camera.position.lerp(targetCamPos, 5 * deltaTime);
+        camera.lookAt(tankPos.x, tankPos.y + 0.4, tankPos.z);
+      }
+
+      updateTankVisuals(deltaTime);
+      updateTankUI();
     }
 
-    function playerSphereCollision(
-      sphere
-    ) {
-      const center =
-        vector1
-          .addVectors(
-            playerCollider.start,
-            playerCollider.end
-          )
-          .multiplyScalar(
-            0.5
-          );
+    const colV1 = new THREE.Vector3();
+    const colV2 = new THREE.Vector3();
+    const colV3 = new THREE.Vector3();
 
-      const sphereCenter =
-        sphere.collider.center;
-
-      const r =
-        playerCollider.radius +
-        sphere.collider.radius;
-
+    function tankSphereCollision(sphere) {
+      const center = colV1.addVectors(tank.collider.start, tank.collider.end).multiplyScalar(0.5);
+      const sphereCenter = sphere.collider.center;
+      const r = tank.collider.radius + sphere.collider.radius;
       const r2 = r * r;
 
-      for (
-        const point of [
-          playerCollider.start,
-          playerCollider.end,
-          center
-        ]
-      ) {
-        const d2 =
-          point.distanceToSquared(
-            sphereCenter
-          );
-
+      for (const point of [tank.collider.start, tank.collider.end, center]) {
+        const d2 = point.distanceToSquared(sphereCenter);
         if (d2 < r2) {
-          const normal =
-            vector1
-              .subVectors(
-                point,
-                sphereCenter
-              )
-              .normalize();
-
-          const v1 =
-            vector2
-              .copy(normal)
-              .multiplyScalar(
-                normal.dot(
-                  playerVelocity
-                )
-              );
-
-          const v2 =
-            vector3
-              .copy(normal)
-              .multiplyScalar(
-                normal.dot(
-                  sphere.velocity
-                )
-              );
-
-          playerVelocity
-            .add(v2)
-            .sub(v1);
-
-          sphere.velocity
-            .add(v1)
-            .sub(v2);
-
-          const d =
-            (
-              r -
-              Math.sqrt(d2)
-            ) / 2;
-
-          sphereCenter.addScaledVector(
-            normal,
-            -d
-          );
+          const normal = colV2.subVectors(point, sphereCenter).normalize();
+          const v1 = colV3.copy(normal).multiplyScalar(normal.dot(tank.velocity));
+          const v2 = colV1.copy(normal).multiplyScalar(normal.dot(sphere.velocity));
+          tank.velocity.add(v2).sub(v1);
+          sphere.velocity.add(v1).sub(v2);
+          const d = (r - Math.sqrt(d2)) / 2;
+          sphereCenter.addScaledVector(normal, -d);
+          return;
         }
       }
     }
 
     function spheresCollisions() {
-      for (
-        let i = 0;
-        i < spheres.length;
-        i++
-      ) {
-        const s1 =
-          spheres[i];
-
-        for (
-          let j = i + 1;
-          j <
-          spheres.length;
-          j++
-        ) {
-          const s2 =
-            spheres[j];
-
-          const d2 =
-            s1.collider.center
-              .distanceToSquared(
-                s2.collider.center
-              );
-
-          const r =
-            s1.collider.radius +
-            s2.collider.radius;
-
+      for (let i = 0; i < spheres.length; i++) {
+        const s1 = spheres[i];
+        for (let j = i + 1; j < spheres.length; j++) {
+          const s2 = spheres[j];
+          const d2 = s1.collider.center.distanceToSquared(s2.collider.center);
+          const r = s1.collider.radius + s2.collider.radius;
           const r2 = r * r;
-
           if (d2 < r2) {
-            const normal =
-              vector1
-                .subVectors(
-                  s1.collider
-                    .center,
-                  s2.collider
-                    .center
-                )
-                .normalize();
-
-            const v1 =
-              vector2
-                .copy(normal)
-                .multiplyScalar(
-                  normal.dot(
-                    s1.velocity
-                  )
-                );
-
-            const v2 =
-              vector3
-                .copy(normal)
-                .multiplyScalar(
-                  normal.dot(
-                    s2.velocity
-                  )
-                );
-
-            s1.velocity
-              .add(v2)
-              .sub(v1);
-
-            s2.velocity
-              .add(v1)
-              .sub(v2);
-
-            const d =
-              (
-                r -
-                Math.sqrt(d2)
-              ) / 2;
-
-            s1.collider.center
-              .addScaledVector(
-                normal,
-                d
-              );
-
-            s2.collider.center
-              .addScaledVector(
-                normal,
-                -d
-              );
+            const normal = colV1.subVectors(s1.collider.center, s2.collider.center).normalize();
+            const v1 = colV2.copy(normal).multiplyScalar(normal.dot(s1.velocity));
+            const v2 = colV3.copy(normal).multiplyScalar(normal.dot(s2.velocity));
+            s1.velocity.add(v2).sub(v1);
+            s2.velocity.add(v1).sub(v2);
+            const d = (r - Math.sqrt(d2)) / 2;
+            s1.collider.center.addScaledVector(normal, d);
+            s2.collider.center.addScaledVector(normal, -d);
           }
         }
       }
     }
 
-    function updateSpheres(
-      deltaTime
-    ) {
-      spheres.forEach(
-        (sphere) => {
-          sphere.collider.center
-            .addScaledVector(
-              sphere.velocity,
-              deltaTime
-            );
-
-          const result =
-            worldOctree.sphereIntersect(
-              sphere.collider
-            );
-
-          if (result) {
-            sphere.velocity.addScaledVector(
-              result.normal,
-              -
-                result.normal.dot(
-                  sphere.velocity
-                ) *
-                  1.5
-            );
-
-            sphere.collider.center.add(
-              result.normal.multiplyScalar(
-                result.depth
-              )
-            );
-          } else {
-            sphere.velocity.y -=
-              GRAVITY *
-              deltaTime;
-          }
-
-          const damping =
-            Math.exp(
-              -1.5 *
-                deltaTime
-            ) - 1;
-
-          sphere.velocity.addScaledVector(
-            sphere.velocity,
-            damping
-          );
-
-          playerSphereCollision(
-            sphere
-          );
+    function updateSpheres(deltaTime) {
+      for (const sphere of spheres) {
+        sphere.collider.center.addScaledVector(sphere.velocity, deltaTime);
+        const result = worldOctree.sphereIntersect(sphere.collider);
+        if (result) {
+          sphere.velocity.addScaledVector(result.normal, -result.normal.dot(sphere.velocity) * 1.5);
+          sphere.collider.center.add(result.normal.multiplyScalar(result.depth));
         }
-      );
-
+        tankSphereCollision(sphere);
+        sphere.mesh.position.copy(sphere.collider.center);
+      }
       spheresCollisions();
+    }
 
-      for (
-        const sphere of spheres
-      ) {
-        sphere.mesh.position.copy(
-          sphere.collider.center
-        );
+    // ==================== TANK FUNCTIONS ====================
+
+    function startMainAttack() {
+      if (tank.mainAttackWindup > 0) return;
+      tank.mainAttackWindup = tank.mainAttackWindupMax;
+      tank.mainAttackHit = false;
+      tank.punchProgress = 0;
+    }
+
+    function activateSlam() {
+      tank.slamCooldown = tank.slamCooldownMax;
+      tank.isSlamming = true;
+      tank.slamEffectTimer = tank.slamEffectMax;
+    }
+
+    function activateReflection() {
+      tank.reflectCooldown = tank.reflectCooldownMax;
+      tank.isReflecting = true;
+      tank.reflectTimer = tank.reflectDuration;
+    }
+
+    function activateUltimate() {
+      tank.ultimateCooldown = tank.ultimateCooldownMax;
+      tank.isUltimateActive = true;
+      tank.ultimateTimer = tank.ultimateDuration;
+      tank.mainAttackWindup = 0;
+      tank.mainAttackHit = false;
+    }
+
+    function updateTankVisuals(deltaTime) {
+      // Windup ring — fade out smoothly
+      if (tank.mainAttackWindup > 0) {
+        const progress = 1 - tank.mainAttackWindup / tank.mainAttackWindupMax;
+        tank.model.windupRingMat.opacity = 0.5 + progress * 0.5;
+        tank.model.windupRing.scale.setScalar(0.5 + progress * 1.5);
+      } else {
+        tank.model.windupRingMat.opacity = Math.max(0, tank.model.windupRingMat.opacity - deltaTime * 2.5);
+      }
+
+      // Reflection shield sphere
+      if (tank.isReflecting) {
+        const alpha = 0.15 + Math.sin(performance.now() * 0.008) * 0.1;
+        tank.model.reflectShieldMat.opacity = alpha;
+        tank.model.reflectShield.visible = true;
+        tank.model.reflectShield.scale.setScalar(1 + Math.sin(performance.now() * 0.005) * 0.05);
+      } else {
+        tank.model.reflectShieldMat.opacity = 0;
+        tank.model.reflectShield.visible = false;
+      }
+
+      // Slam ring
+      if (tank.isSlamming) {
+        const progress = 1 - tank.slamEffectTimer / tank.slamEffectMax;
+        tank.model.slamRingMat.opacity = 1 - progress;
+        tank.model.slamRing.scale.setScalar(0.3 + progress * 8);
+      } else {
+        tank.model.slamRingMat.opacity = 0;
+      }
+
+      // Body-only color priority: ultimate > reflection > normal — head stays stone
+      if (tank.isUltimateActive) {
+        const pulse = 0.6 + Math.sin(performance.now() * 0.006) * 0.2;
+        tank.model.bodyMat.color.setRGB(0.9 * pulse, 0.7 * pulse, 0.1 * pulse);
+        tank.model.bodyMat.emissive.set(0x000000);
+      } else if (tank.isReflecting) {
+        // Blue + shiny body
+        tank.model.bodyMat.color.set(0x4488ff);
+        tank.model.bodyMat.emissive.set(0x2244cc);
+      } else if (tank.hp > 0) {
+        tank.model.bodyMat.color.set(0x6b5b4f);
+        tank.model.bodyMat.emissive.set(0x000000);
       }
     }
 
-    function getForwardVector() {
-      camera.getWorldDirection(
-        playerDirection
-      );
+    function updateTankUI() {
+      const hpPercent = Math.max(0, (tank.hp / tank.maxHp) * 100);
+      document.getElementById("tank-health-bar-fill").style.width = hpPercent + "%";
+      document.getElementById("tank-health-text").textContent =
+        "Tank HP: " + Math.ceil(tank.hp) + " / " + tank.maxHp;
 
-      playerDirection.y = 0;
+      if (tank.isUltimateActive) {
+        document.getElementById("tank-health-bar-container").style.borderColor = "#ffaa00";
+        document.getElementById("tank-health-bar-container").style.boxShadow = "0 0 15px #ffaa00";
+      } else {
+        document.getElementById("tank-health-bar-container").style.borderColor = "#555";
+        document.getElementById("tank-health-bar-container").style.boxShadow = "none";
+      }
 
-      playerDirection.normalize();
+      const abilities = [
+        { id: "tank-ability-q", cd: 0, cdMax: 0, active: tank.mainAttackWindup > 0 },
+        { id: "tank-ability-e", cd: tank.slamCooldown, cdMax: tank.slamCooldownMax, active: tank.isSlamming },
+        { id: "tank-ability-r", cd: tank.isReflecting ? tank.reflectTimer : tank.reflectCooldown, cdMax: tank.isReflecting ? tank.reflectDuration : tank.reflectCooldownMax, active: tank.isReflecting },
+        { id: "tank-ability-f", cd: tank.isUltimateActive ? tank.ultimateTimer : tank.ultimateCooldown, cdMax: tank.isUltimateActive ? tank.ultimateDuration : tank.ultimateCooldownMax, active: tank.isUltimateActive },
+      ];
 
-      return playerDirection;
+      abilities.forEach((ab) => {
+        const el = document.getElementById(ab.id);
+        const overlay = el.querySelector(".cd-overlay");
+        if (ab.active) el.classList.add("active");
+        else el.classList.remove("active");
+        const cdPercent = ab.cdMax > 0 ? (ab.cd / ab.cdMax) * 100 : 0;
+        overlay.style.height = cdPercent + "%";
+      });
     }
 
-    function getSideVector() {
-      camera.getWorldDirection(
-        playerDirection
-      );
-
-      playerDirection.y = 0;
-
-      playerDirection.normalize();
-
-      playerDirection.cross(
-        camera.up
-      );
-
-      return playerDirection;
-    }
-
-    function controls(
-      deltaTime
-    ) {
-      const speedDelta =
-        deltaTime *
-        (
-          playerOnFloor
-            ? 25
-            : 8
-        );
-
-      if (
-        keyStates["KeyW"]
-      ) {
-        playerVelocity.add(
-          getForwardVector().multiplyScalar(
-            speedDelta
-          )
-        );
-      }
-
-      if (
-        keyStates["KeyS"]
-      ) {
-        playerVelocity.add(
-          getForwardVector().multiplyScalar(
-            -speedDelta
-          )
-        );
-      }
-
-      if (
-        keyStates["KeyA"]
-      ) {
-        playerVelocity.add(
-          getSideVector().multiplyScalar(
-            -speedDelta
-          )
-        );
-      }
-
-      if (
-        keyStates["KeyD"]
-      ) {
-        playerVelocity.add(
-          getSideVector().multiplyScalar(
-            speedDelta
-          )
-        );
-      }
-
-      if (
-        playerOnFloor &&
-        keyStates["Space"]
-      ) {
-        playerVelocity.y =
-          15;
-      }
-    }
+    // ==================== END TANK FUNCTIONS ====================
 
     const loader =
       new GLTFLoader();
@@ -837,49 +945,18 @@
           "Error loading collision world:",
           error
         );
-
-        document.getElementById(
-          "info"
-        ).innerHTML +=
-          "<br><strong>Failed to load 3D world. Check the browser console.</strong>";
       }
     );
 
-    function teleportPlayerIfOob() {
-      if (
-        camera.position.y <=
-        -25
-      ) {
-        playerCollider.start.set(
-          0,
-          0.35,
-          0
-        );
-
-        playerCollider.end.set(
-          0,
-          1,
-          0
-        );
-
-        playerCollider.radius =
-          0.35;
-
-        camera.position.copy(
-          playerCollider.end
-        );
-
-        camera.rotation.set(
-          0,
-          0,
-          0
-        );
-
-        playerVelocity.set(
-          0,
-          0,
-          0
-        );
+    function teleportTankIfOob() {
+      const tankPos = tank.model.group.position;
+      if (tankPos.y <= -25) {
+        tank.collider.start.set(0, 0.43, 0);
+        tank.collider.end.set(0, 0.57, 0);
+        tank.collider.radius = 0.35;
+        tank.model.group.position.set(0, 0.5, 0);
+        tank.velocity.set(0, 0, 0);
+        syncTankCollider();
       }
     }
 
@@ -900,10 +977,6 @@
         STEPS_PER_FRAME;
         i++
       ) {
-        controls(
-          deltaTime
-        );
-
         updatePlayer(
           deltaTime
         );
@@ -912,7 +985,7 @@
           deltaTime
         );
 
-        teleportPlayerIfOob();
+        teleportTankIfOob();
       }
 
       renderer.render(
